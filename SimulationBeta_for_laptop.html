@@ -1,0 +1,1180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Water Pipeline Leakage Detection System</title>
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+  
+  <style>
+    :root {
+      --bg-dark: #0f172a;
+      --panel-bg: rgba(30, 41, 59, 0.85);
+      --panel-border: rgba(255, 255, 255, 0.1);
+      --accent-blue: #38bdf8;
+      --accent-green: #22c55e;
+      --accent-yellow: #eab308;
+      --accent-red: #ef4444;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    body { background-color: var(--bg-dark); color: var(--text-main); overflow: hidden; height: 100vh; width: 100vw; }
+
+    #webgl-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+
+    /* UI Layout Overlay */
+    .ui-overlay {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      z-index: 10;
+      pointer-events: none;
+      display: grid;
+      grid-template-columns: 320px 1fr 360px;
+      grid-template-rows: 60px 1fr 220px;
+      gap: 12px;
+      padding: 12px;
+    }
+
+    .interactive { pointer-events: auto; }
+
+    /* Panels Styling */
+    .panel {
+      background: var(--panel-bg);
+      backdrop-filter: blur(10px);
+      border: 1px solid var(--panel-border);
+      border-radius: 8px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      overflow: hidden;
+    }
+
+    /* Header */
+    header {
+      grid-column: 1 / -1;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--panel-bg);
+      backdrop-filter: blur(10px);
+      border: 1px solid var(--panel-border);
+      border-radius: 8px;
+      padding: 0 16px;
+    }
+
+    .title-group { display: flex; align-items: center; gap: 10px; }
+    .title-group i { color: var(--accent-blue); font-size: 1.5rem; }
+    .title-group h1 { font-size: 1.2rem; font-weight: 600; letter-spacing: 0.5px; }
+
+    .status-badge {
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-weight: 700;
+      font-size: 0.85rem;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+    .status-CALIBRATING { background: rgba(56, 189, 248, 0.2); color: var(--accent-blue); border: 1px solid var(--accent-blue); }
+    .status-NORMAL { background: rgba(34, 197, 94, 0.2); color: var(--accent-green); border: 1px solid var(--accent-green); }
+    .status-SUSPICIOUS { background: rgba(234, 179, 8, 0.2); color: var(--accent-yellow); border: 1px solid var(--accent-yellow); }
+    .status-LEAK { background: rgba(239, 68, 68, 0.2); color: var(--accent-red); border: 1px solid var(--accent-red); }
+
+    /* Left Sidebar: Controls & Info */
+    .left-sidebar { grid-column: 1; grid-row: 2; overflow-y: auto; }
+    
+    .section-title {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+      font-weight: 700;
+    }
+
+    .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .btn {
+      background: #334155;
+      color: var(--text-main);
+      border: 1px solid var(--panel-border);
+      padding: 8px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      font-weight: 600;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    .btn:hover { background: #475569; }
+    .btn-primary { background: #0284c7; }
+    .btn-primary:hover { background: #0369a1; }
+    .btn-warning { background: #ca8a04; }
+    .btn-warning:hover { background: #a16207; }
+    .btn-danger { background: #dc2626; }
+    .btn-danger:hover { background: #b91c1c; }
+    .btn.active { outline: 2px solid var(--accent-blue); }
+
+    /* Detection Result Box */
+    .result-box {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid var(--panel-border);
+      border-radius: 6px;
+      padding: 10px;
+    }
+    .result-row { display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 0.85rem; }
+    .result-val { font-weight: bold; color: var(--accent-blue); }
+
+    /* Node Cards Grid */
+    .nodes-grid { display: flex; flex-direction: column; gap: 8px; }
+    .node-card {
+      background: rgba(15, 23, 42, 0.5);
+      border: 1px solid var(--panel-border);
+      border-left: 4px solid var(--accent-green);
+      border-radius: 4px;
+      padding: 8px;
+      font-size: 0.8rem;
+    }
+    .node-card.anomaly { border-left-color: var(--accent-red); }
+    .node-header { display: flex; justify-content: space-between; font-weight: bold; margin-bottom: 4px; }
+    .node-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+    
+    /* Center Bottom: Charts Panel */
+    .bottom-panel { grid-column: 2 / 3; grid-row: 3; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .chart-container { position: relative; height: 100%; width: 100%; }
+
+    /* Right Sidebar: Logs & ESP-NOW */
+    .right-sidebar { grid-column: 3; grid-row: 2 / 4; overflow: hidden; }
+    
+    /* ESP-NOW Diagram */
+    .esp-network {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(15, 23, 42, 0.6);
+      padding: 10px;
+      border-radius: 6px;
+      position: relative;
+    }
+    .esp-node {
+      width: 40px;
+      height: 30px;
+      background: #334155;
+      border: 1px solid var(--accent-blue);
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.7rem;
+      font-weight: bold;
+      position: relative;
+    }
+    .esp-node.active::after {
+      content: '';
+      position: absolute;
+      top: -3px; right: -3px; width: 6px; height: 6px;
+      background: var(--accent-green);
+      border-radius: 50%;
+    }
+    .esp-link {
+      flex: 1;
+      height: 2px;
+      background: #475569;
+      position: relative;
+      margin: 0 2px;
+    }
+    .esp-packet {
+      position: absolute;
+      top: -3px;
+      width: 8px;
+      height: 8px;
+      background: var(--accent-blue);
+      border-radius: 50%;
+      animation: packetMove 1.5s infinite linear;
+    }
+    @keyframes packetMove {
+      0% { left: 0%; opacity: 1; }
+      100% { left: 100%; opacity: 0; }
+    }
+
+    /* Event Log */
+    .event-log {
+      flex: 1;
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid var(--panel-border);
+      border-radius: 6px;
+      padding: 8px;
+      font-family: monospace;
+      font-size: 0.75rem;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .log-entry { margin-bottom: 2px; }
+    .log-time { color: var(--text-muted); }
+    .log-info { color: var(--accent-blue); }
+    .log-warn { color: var(--accent-yellow); }
+    .log-danger { color: var(--accent-red); }
+
+    /* Expandable Accordion */
+    .accordion {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid var(--panel-border);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .accordion-header {
+      padding: 8px 12px;
+      font-size: 0.8rem;
+      font-weight: bold;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      background: #1e293b;
+    }
+    .accordion-content {
+      padding: 8px 12px;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      display: none;
+      line-height: 1.4;
+    }
+    .accordion-content.show { display: block; }
+
+    /* Select Inputs */
+    select {
+      background: #334155;
+      color: var(--text-main);
+      border: 1px solid var(--panel-border);
+      padding: 6px;
+      border-radius: 4px;
+      width: 100%;
+      font-size: 0.8rem;
+    }
+
+    /* Calibration Overlay Bar */
+    .calib-bar-bg {
+      width: 100%;
+      background: #334155;
+      height: 6px;
+      border-radius: 3px;
+      overflow: hidden;
+      margin-top: 4px;
+    }
+    .calib-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: var(--accent-blue);
+      transition: width 0.1s linear;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="webgl-container"></div>
+
+  <div class="ui-overlay">
+    
+    <header class="interactive">
+      <div class="title-group">
+        <i class="fa-solid fa-network-wired"></i>
+        <h1>Smart Water Pipeline Leakage Detection System</h1>
+      </div>
+      <div id="system-status-badge" class="status-badge status-CALIBRATING">CALIBRATING</div>
+    </header>
+
+    <div class="panel left-sidebar interactive">
+      <div class="section-title">Control Center</div>
+      <div class="btn-group">
+        <button id="btn-normal" class="btn btn-primary active" onclick="setPipelineMode('NORMAL')"><i class="fa-solid fa-check"></i> Normal</button>
+        <button id="btn-minor" class="btn btn-warning" onclick="setPipelineMode('MINOR_LEAK')"><i class="fa-solid fa-triangle-exclamation"></i> Minor Leak</button>
+      </div>
+      <div class="btn-group">
+        <button id="btn-major" class="btn btn-danger" onclick="setPipelineMode('MAJOR_LEAK')"><i class="fa-solid fa-burst"></i> Major Leak</button>
+        <button id="btn-demo" class="btn" onclick="toggleAutoDemo()"><i class="fa-solid fa-play"></i> Auto Demo</button>
+      </div>
+      
+      <div style="margin-top: 4px;">
+        <label class="section-title">Simulated Leak Target Location</label>
+        <select id="leak-location-select" onchange="changeLeakZoneTarget(this.value)">
+          <option value="A_B">Pipe Section A → B</option>
+          <option value="B_C" selected>Pipe Section B → C</option>
+          <option value="C_D">Pipe Section C → D</option>
+        </select>
+      </div>
+
+      <div class="btn-group" style="margin-top: 4px;">
+        <button class="btn" onclick="triggerSensorSpike()"><i class="fa-solid fa-bolt"></i> Inject Spike</button>
+        <button class="btn" onclick="revealPhysicalLeak()"><i class="fa-solid fa-eye"></i> Reveal Leak</button>
+      </div>
+
+      <button class="btn btn-danger" onclick="resetSystem()" style="width:100%;"><i class="fa-solid fa-rotate-right"></i> Reset System</button>
+
+      <div class="section-title" style="margin-top: 8px;">Detection Diagnosis</div>
+      <div class="result-box">
+        <div class="result-row"><span>Calibration:</span><span id="calib-text-val" class="result-val">0%</span></div>
+        <div class="calib-bar-bg"><div id="calib-bar-fill" class="calib-bar-fill"></div></div>
+        <div class="result-row" style="margin-top: 8px;"><span>Probable Leak Zone:</span><span id="res-zone" class="result-val">NONE</span></div>
+        <div class="result-row"><span>Dynamic Confidence:</span><span id="res-conf" class="result-val">0%</span></div>
+        <div class="result-row"><span>Estimated Time:</span><span id="res-time" class="result-val">--</span></div>
+      </div>
+
+      <div class="section-title" style="margin-top: 8px;">ESP32 Node Status</div>
+      <div class="nodes-grid" id="nodes-grid-container">
+        </div>
+    </div>
+
+    <div class="panel bottom-panel interactive">
+      <div class="chart-container">
+        <canvas id="flowChart"></canvas>
+      </div>
+      <div class="chart-container">
+        <canvas id="pressureChart"></canvas>
+      </div>
+    </div>
+
+    <div class="panel right-sidebar interactive">
+      <div class="section-title">ESP-NOW Mesh Network Data Link</div>
+      <div class="esp-network">
+        <div class="esp-node active">ESP A</div>
+        <div class="esp-link"><div class="esp-packet"></div></div>
+        <div class="esp-node active">ESP B</div>
+        <div class="esp-link"><div class="esp-packet" style="animation-delay: 0.5s;"></div></div>
+        <div class="esp-node active">ESP C</div>
+        <div class="esp-link"><div class="esp-packet" style="animation-delay: 1.0s;"></div></div>
+        <div class="esp-node active">ESP D</div>
+      </div>
+
+      <div class="section-title" style="margin-top: 8px;">Adaptive Threshold Limits</div>
+      <div class="result-box" id="thresholds-info-panel">
+        </div>
+
+      <div class="section-title" style="margin-top: 8px;">Real-Time System Event Log</div>
+      <div class="event-log" id="event-log-container">
+        </div>
+
+      <div class="accordion" style="margin-top: 8px;">
+        <div class="accordion-header" onclick="toggleAccordion()">
+          <span><i class="fa-solid fa-graduation-cap"></i> HOW LEAK DETECTION WORKS</span>
+          <i class="fa-solid fa-chevron-down"></i>
+        </div>
+        <div class="accordion-content" id="accordion-content">
+          1. <b>Sensors:</b> Measures flow (L/min) and dynamic static pressure (bar).<br>
+          2. <b>Calibration:</b> Gathers sample baseline distributions during nominal state.<br>
+          3. <b>Filtering:</b> Rolling window statistics remove transient spikes & noise.<br>
+          4. <b>Adaptive Thresholds:</b> Triggers anomaly tags using statistical limits ($\mu \pm k\cdot\sigma$).<br>
+          5. <b>Spatial Correlation:</b> Compares neighboring spatial telemetry gradient profiles.<br>
+          6. <b>Localization:</b> Pinpoints high-discontinuity pipeline boundaries dynamically.
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    /* =========================================================================
+       1. CONFIGURATION & SIMULATION CONSTANTS
+       ========================================================================= */
+    const CONFIG = {
+      calibSamplesRequired: 60,
+      sensorUpdateIntervalMs: 200,
+      nodes: ['Node A', 'Node B', 'Node C', 'Node D'],
+      pipes: ['Pipe A', 'Pipe B', 'Pipe C', 'Pipe D', 'Pipe E'],
+      baseline: {
+        flow: 50.0, // Baseline L/min
+        pressureStart: 4.8, // Pressure at Tank outlet (bar)
+        dropPerSection: 0.12 // Normal hydraulic loss per segment
+      },
+      noise: {
+        flowStd: 0.25,
+        pressureStd: 0.02
+      },
+      rollingWindowSize: 15,
+      thresholdSigmaMultiplier: 3.0
+    };
+
+    /* =========================================================================
+       2. SYSTEM GLOBAL STATE ENGINE
+       ========================================================================= */
+    const State = {
+      mode: 'NORMAL', // NORMAL, MINOR_LEAK, MAJOR_LEAK
+      leakTargetZone: 'B_C', // A_B, B_C, C_D
+      physicalLeakRevealed: false,
+      autoDemoActive: false,
+      demoTimer: 0,
+      calibProgress: 0,
+      isCalibrated: false,
+      systemStatus: 'CALIBRATING', // CALIBRATING, NORMAL, SUSPICIOUS, LEAK DETECTED
+      detectionStartTime: null,
+      spikeActiveTicks: 0,
+      
+      // Node Mathematical Models
+      nodes: {
+        'Node A': { flow: 50, pressure: 4.8, rollingFlow: [], rollingPress: [], meanF: 50, stdF: 0, meanP: 4.8, stdP: 0, anomalyScore: 0, anomalyFlag: false, baselineF: 50, baselineP: 4.8 },
+        'Node B': { flow: 50, pressure: 4.68, rollingFlow: [], rollingPress: [], meanF: 50, stdF: 0, meanP: 4.68, stdP: 0, anomalyScore: 0, anomalyFlag: false, baselineF: 50, baselineP: 4.68 },
+        'Node C': { flow: 50, pressure: 4.56, rollingFlow: [], rollingPress: [], meanF: 50, stdF: 0, meanP: 4.56, stdP: 0, anomalyScore: 0, anomalyFlag: false, baselineF: 50, baselineP: 4.56 },
+        'Node D': { flow: 50, pressure: 4.44, rollingFlow: [], rollingPress: [], meanF: 50, stdF: 0, meanP: 4.44, stdP: 0, anomalyScore: 0, anomalyFlag: false, baselineF: 50, baselineP: 4.44 }
+      },
+
+      // Diagnostic Results
+      result: {
+        probableZone: 'NONE',
+        confidence: 0,
+        detectionTimeStr: '--'
+      }
+    };
+
+    /* =========================================================================
+       3. THREE.JS 3D GRAPHICS SCENE SETUP
+       ========================================================================= */
+    let scene, camera, renderer, controls;
+    let waterParticles, leakParticles;
+    let leakMeshGroup;
+    const node3DObjects = {};
+
+    function init3DScene() {
+      const container = document.getElementById('webgl-container');
+      
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x0f172a);
+      // FIXED: Very light fog so scene doesn't fade out when zooming out far
+      scene.fog = new THREE.FogExp2(0x0f172a, 0.002);
+
+      // FIXED: Increased camera far plane from 1000 to 2000 to allow smooth zoom out
+      camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 2000);
+      camera.position.set(-25, 18, 35);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(window.devicePixelRatio);
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      container.appendChild(renderer.domElement);
+
+      controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.05;
+      controls.target.set(10, 2, 0);
+
+      // Lights
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+      scene.add(ambientLight);
+
+      const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+      dirLight.position.set(20, 40, 20);
+      dirLight.castShadow = true;
+      dirLight.shadow.mapSize.width = 2048;
+      dirLight.shadow.mapSize.height = 2048;
+      scene.add(dirLight);
+
+      const pointLight = new THREE.PointLight(0x38bdf8, 1, 30);
+      pointLight.position.set(-15, 8, 0);
+      scene.add(pointLight);
+
+      // Ground Plane
+      const groundGeo = new THREE.PlaneGeometry(200, 120);
+      const groundMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.8 });
+      const ground = new THREE.Mesh(groundGeo, groundMat);
+      ground.rotation.x = -Math.PI / 2;
+      ground.position.set(10, -1, 0);
+      ground.receiveShadow = true;
+      scene.add(ground);
+
+      // Grid Helper
+      const grid = new THREE.GridHelper(200, 50, 0x38bdf8, 0x334155);
+      grid.position.set(10, -0.99, 0);
+      scene.add(grid);
+
+      // Build Physical Simulation Models
+      buildWaterTank();
+      buildPipelineAndNodes();
+      buildFlowParticles();
+      buildLeakEffect();
+
+      window.addEventListener('resize', onWindowResize);
+    }
+
+    // Render Water Tank
+    function buildWaterTank() {
+      const tankGroup = new THREE.Group();
+      tankGroup.position.set(-20, 6, 0);
+
+      // Glass Tank Body
+      const tankGeo = new THREE.CylinderGeometry(4, 4, 12, 32);
+      const tankMat = new THREE.MeshPhysicalMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.3,
+        roughness: 0.1,
+        transmission: 0.9,
+        thickness: 0.5
+      });
+      const tank = new THREE.Mesh(tankGeo, tankMat);
+      tankGroup.add(tank);
+
+      // Water Volume Inside
+      const waterGeo = new THREE.CylinderGeometry(3.8, 3.8, 10, 32);
+      const waterMat = new THREE.MeshStandardMaterial({
+        color: 0x0284c7,
+        transparent: true,
+        opacity: 0.75,
+        roughness: 0.2
+      });
+      const water = new THREE.Mesh(waterGeo, waterMat);
+      water.position.y = -0.8;
+      tankGroup.add(water);
+
+      // Metallic Frame Stand
+      const legGeo = new THREE.CylinderGeometry(0.3, 0.3, 6, 16);
+      const legMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.8 });
+      
+      for (let i = 0; i < 4; i++) {
+        const leg = new THREE.Mesh(legGeo, legMat);
+        const angle = (i * Math.PI) / 2;
+        leg.position.set(Math.cos(angle) * 3.5, -6, Math.sin(angle) * 3.5);
+        leg.castShadow = true;
+        tankGroup.add(leg);
+      }
+
+      scene.add(tankGroup);
+    }
+
+    // Build Continuous Pipe Pipeline & ESP32 Sensor Nodes
+    function buildPipelineAndNodes() {
+      const pipeGroup = new THREE.Group();
+
+      // Main Outer Translucent Pipe Assembly
+      const pipeGeo = new THREE.CylinderGeometry(0.8, 0.8, 55, 32);
+      pipeGeo.rotateZ(-Math.PI / 2);
+      const pipeMat = new THREE.MeshPhysicalMaterial({
+        color: 0x94a3b8,
+        transparent: true,
+        opacity: 0.4,
+        roughness: 0.2,
+        clearcoat: 1.0
+      });
+      const mainPipe = new THREE.Mesh(pipeGeo, pipeMat);
+      mainPipe.position.set(10, 1.5, 0);
+      pipeGroup.add(mainPipe);
+
+      // 4 Monitoring Nodes Layout (-10, 3.3, 16.6, 30)
+      const nodeXCoords = [-10, 3.3, 16.6, 30];
+      const nodeNames = ['Node A', 'Node B', 'Node C', 'Node D'];
+
+      nodeNames.forEach((name, idx) => {
+        const x = nodeXCoords[idx];
+        const nodeGrp = new THREE.Group();
+        nodeGrp.position.set(x, 1.5, 0);
+
+        // Pipe Joint Flange Ring
+        const flangeGeo = new THREE.CylinderGeometry(1.1, 1.1, 0.6, 24);
+        flangeGeo.rotateZ(-Math.PI / 2);
+        const flangeMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.8 });
+        const flange = new THREE.Mesh(flangeGeo, flangeMat);
+        nodeGrp.add(flange);
+
+        // Yellow Flow Sensor Mounting
+        const flowSensGeo = new THREE.BoxGeometry(0.8, 0.8, 0.8);
+        const flowSensMat = new THREE.MeshStandardMaterial({ color: 0xeab308 });
+        const flowSens = new THREE.Mesh(flowSensGeo, flowSensMat);
+        flowSens.position.set(0, 1.1, 0);
+        nodeGrp.add(flowSens);
+
+        // Cyan Pressure Sensor Mounting
+        const pressSensGeo = new THREE.CylinderGeometry(0.3, 0.3, 0.8, 16);
+        const pressSensMat = new THREE.MeshStandardMaterial({ color: 0x06b6d4 });
+        const pressSens = new THREE.Mesh(pressSensGeo, pressSensMat);
+        pressSens.position.set(0, 0.9, 0.9);
+        nodeGrp.add(pressSens);
+
+        // ESP32 Microcontroller Enclosure
+        const espGeo = new THREE.BoxGeometry(1.4, 1.8, 0.6);
+        const espMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.5 });
+        const espBox = new THREE.Mesh(espGeo, espMat);
+        espBox.position.set(0, 2.4, 0);
+        nodeGrp.add(espBox);
+
+        // ESP Status LED
+        const ledGeo = new THREE.SphereGeometry(0.12, 16, 16);
+        const ledMat = new THREE.MeshBasicMaterial({ color: 0x22c55e });
+        const led = new THREE.Mesh(ledGeo, ledMat);
+        led.position.set(0.4, 3.0, 0.3);
+        nodeGrp.add(led);
+
+        pipeGroup.add(nodeGrp);
+        node3DObjects[name] = { group: nodeGrp, led: ledMat };
+      });
+
+      scene.add(pipeGroup);
+    }
+
+    // Build Internal Animated Water Stream Particles
+    function buildFlowParticles() {
+      const particleCount = 300;
+      const geo = new THREE.BufferGeometry();
+      const positions = new Float32Array(particleCount * 3);
+
+      for (let i = 0; i < particleCount; i++) {
+        positions[i * 3] = -17 + Math.random() * 54;
+        positions[i * 3 + 1] = 1.5 + (Math.random() - 0.5) * 0.8;
+        positions[i * 3 + 2] = (Math.random() - 0.5) * 0.8;
+      }
+
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      const mat = new THREE.PointsMaterial({ color: 0x38bdf8, size: 0.25, transparent: true, opacity: 0.8 });
+      waterParticles = new THREE.Points(geo, mat);
+      scene.add(waterParticles);
+    }
+
+    // Build Physical Leak Spray Particle Effect
+    function buildLeakEffect() {
+      leakMeshGroup = new THREE.Group();
+      
+      // FIXED: Increased particle count, enlarged size, and upward speed for high visibility
+      const pCount = 300;
+      const geo = new THREE.BufferGeometry();
+      const positions = new Float32Array(pCount * 3);
+      const velocities = [];
+
+      for (let i = 0; i < pCount; i++) {
+        positions[i * 3] = (Math.random() - 0.5) * 0.4;
+        positions[i * 3 + 1] = Math.random() * 0.5;
+        positions[i * 3 + 2] = (Math.random() - 0.5) * 0.4;
+
+        velocities.push(
+          (Math.random() - 0.5) * 0.5,
+          Math.random() * 0.8 + 0.4, // Fast upwards blast
+          (Math.random() - 0.5) * 0.5
+        );
+      }
+
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      const mat = new THREE.PointsMaterial({ color: 0x38bdf8, size: 0.6, transparent: true, opacity: 0.95 });
+      
+      leakParticles = new THREE.Points(geo, mat);
+      leakParticles.userData = { velocities: velocities };
+      leakMeshGroup.add(leakParticles);
+
+      // Add a bright glowing indicator marker over the leak spray
+      const ringGeo = new THREE.RingGeometry(0.8, 1.2, 32);
+      const ringMat = new THREE.MeshBasicMaterial({ color: 0xef4444, side: THREE.DoubleSide });
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.rotation.x = Math.PI / 2;
+      ring.position.y = 0.1;
+      leakMeshGroup.add(ring);
+      
+      leakMeshGroup.visible = false;
+      scene.add(leakMeshGroup);
+    }
+
+    /* =========================================================================
+       4. MATHEMATICAL PIPELINE & HYDRODYNAMIC SENSING ENGINE
+       ========================================================================= */
+    function updatePipelinePhysicsModel() {
+      const isSpike = State.spikeActiveTicks > 0;
+      if (isSpike) State.spikeActiveTicks--;
+
+      // Baseline nominal values
+      let flows = { 'Node A': 50.0, 'Node B': 50.0, 'Node C': 50.0, 'Node D': 50.0 };
+      let pressures = { 'Node A': 4.80, 'Node B': 4.68, 'Node C': 4.56, 'Node D': 4.44 };
+
+      // Modify physical equations based on current state & location
+      if (State.mode !== 'NORMAL') {
+        const severity = State.mode === 'MINOR_LEAK' ? 1.0 : 2.5;
+        const leakFlowLoss = 4.5 * severity;
+        const pressureDropDrop = 0.55 * severity;
+
+        if (State.leakTargetZone === 'A_B') {
+          flows['Node B'] -= leakFlowLoss;
+          flows['Node C'] -= leakFlowLoss * 0.98;
+          flows['Node D'] -= leakFlowLoss * 0.95;
+          pressures['Node B'] -= pressureDropDrop;
+          pressures['Node C'] -= pressureDropDrop * 0.95;
+          pressures['Node D'] -= pressureDropDrop * 0.90;
+        } else if (State.leakTargetZone === 'B_C') {
+          flows['Node C'] -= leakFlowLoss;
+          flows['Node D'] -= leakFlowLoss * 0.98;
+          pressures['Node C'] -= pressureDropDrop;
+          pressures['Node D'] -= pressureDropDrop * 0.95;
+        } else if (State.leakTargetZone === 'C_D') {
+          flows['Node D'] -= leakFlowLoss;
+          pressures['Node D'] -= pressureDropDrop;
+        }
+      }
+
+      // Update actual simulated sensor telemetry per node
+      CONFIG.nodes.forEach(name => {
+        const n = State.nodes[name];
+
+        // Gaussian Noise Generation
+        const noiseF = (Math.random() - 0.5) * CONFIG.noise.flowStd * 2;
+        const noiseP = (Math.random() - 0.5) * CONFIG.noise.pressureStd * 2;
+        
+        // Transient Spike Injection
+        const spikeF = (isSpike && name === 'Node B') ? 6.5 : 0;
+        const spikeP = (isSpike && name === 'Node B') ? 0.8 : 0;
+
+        // Apply low-pass smooth exponential transition
+        const targetF = flows[name] + noiseF + spikeF;
+        const targetP = pressures[name] + noiseP + spikeP;
+
+        n.flow = n.flow * 0.7 + targetF * 0.3;
+        n.pressure = n.pressure * 0.7 + targetP * 0.3;
+
+        // Calibration Statistics Gathering
+        if (State.systemStatus === 'CALIBRATING') {
+          n.baselineF = n.baselineF * 0.9 + n.flow * 0.1;
+          n.baselineP = n.baselineP * 0.9 + n.pressure * 0.1;
+        }
+      });
+    }
+
+    /* =========================================================================
+       5. ADAPTIVE ANOMALY DETECTION & LOCALIZATION ALGORITHM
+       ========================================================================= */
+    function runAnomalyDetectionAlgorithm() {
+      // Step A: Calibration Progress Handling
+      if (State.systemStatus === 'CALIBRATING') {
+        State.calibProgress++;
+        if (State.calibProgress >= CONFIG.calibSamplesRequired) {
+          State.isCalibrated = true;
+          State.systemStatus = 'NORMAL';
+          logEvent('Calibration Complete. Adaptive Baselines Established.', 'info');
+        }
+        return;
+      }
+
+      let totalAnomalyScore = 0;
+
+      // Step B: Calculate Rolling Statistics & Node Anomaly Scores
+      CONFIG.nodes.forEach(name => {
+        const n = State.nodes[name];
+
+        // Update Rolling Buffer
+        n.rollingFlow.push(n.flow);
+        n.rollingPress.push(n.pressure);
+        if (n.rollingFlow.length > CONFIG.rollingWindowSize) {
+          n.rollingFlow.shift();
+          n.rollingPress.shift();
+        }
+
+        // Statistical Calculations
+        n.meanF = n.rollingFlow.reduce((a, b) => a + b, 0) / n.rollingFlow.length;
+        n.meanP = n.rollingPress.reduce((a, b) => a + b, 0) / n.rollingPress.length;
+
+        const varianceF = n.rollingFlow.reduce((a, b) => a + Math.pow(b - n.meanF, 2), 0) / n.rollingFlow.length;
+        const varianceP = n.rollingPress.reduce((a, b) => a + Math.pow(b - n.meanP, 2), 0) / n.rollingPress.length;
+        n.stdF = Math.sqrt(varianceF);
+        n.stdP = Math.sqrt(varianceP);
+
+        // Calculate Deviations from Adaptive Baseline
+        const devF = Math.abs(n.meanF - n.baselineF);
+        const devP = Math.abs(n.baselineP - n.meanP); // Pressure drops during leak
+
+        // Numerical Anomaly Score Computation (0 - 100%)
+        const scoreF = Math.min(100, (devF / 1.2) * 45);
+        const scoreP = Math.min(100, (devP / 0.25) * 55);
+        
+        // Transient Noise Suppression (Require sustained change)
+        let rawScore = Math.max(scoreF, scoreP);
+        if (n.stdF > 1.2 || n.stdP > 0.4) {
+          // Downweight transient noise spikes
+          rawScore *= 0.4;
+        }
+
+        n.anomalyScore = Math.round(n.anomalyScore * 0.6 + rawScore * 0.4);
+        n.anomalyFlag = n.anomalyScore > 45;
+
+        totalAnomalyScore += n.anomalyScore;
+      });
+
+      // Step C: Multi-Node Spatial Gradient Correlation & Localization
+      const nA = State.nodes['Node A'];
+      const nB = State.nodes['Node B'];
+      const nC = State.nodes['Node C'];
+      const nD = State.nodes['Node D'];
+
+      // Evaluate Neighbor Discrepancies
+      const diffAB = (nA.flow - nB.flow) + (nA.pressure - nB.pressure) * 5;
+      const diffBC = (nB.flow - nC.flow) + (nB.pressure - nC.pressure) * 5;
+      const diffCD = (nC.flow - nD.flow) + (nC.pressure - nD.pressure) * 5;
+
+      let detectedZone = 'NONE';
+      let maxDiff = 0;
+
+      if (diffAB > 2.5) { maxDiff = diffAB; detectedZone = 'A → B'; }
+      if (diffBC > 2.5 && diffBC > maxDiff) { maxDiff = diffBC; detectedZone = 'B → C'; }
+      if (diffCD > 2.5 && diffCD > maxDiff) { maxDiff = diffCD; detectedZone = 'C → D'; }
+
+      // Step D: Dynamic System State & Confidence Dynamic Calculation
+      if (detectedZone !== 'NONE' && maxDiff > 3.0) {
+        if (State.systemStatus !== 'LEAK DETECTED') {
+          State.systemStatus = 'LEAK DETECTED';
+          State.detectionStartTime = new Date();
+          logEvent(`ANOMALY DETECTED! Probable Leak Zone: ${detectedZone}`, 'danger');
+        }
+
+        State.result.probableZone = detectedZone;
+        
+        // Dynamic Dynamic Confidence Calculation Formula
+        const targetConf = Math.min(99, Math.round(60 + maxDiff * 7.5));
+        State.result.confidence = Math.round(State.result.confidence * 0.8 + targetConf * 0.2);
+
+        const elapsedSec = ((new Date() - State.detectionStartTime) / 1000).toFixed(1);
+        State.result.detectionTimeStr = `${elapsedSec} s`;
+      } else if (totalAnomalyScore > 60) {
+        State.systemStatus = 'SUSPICIOUS';
+        State.result.probableZone = 'ANALYZING...';
+        State.result.confidence = 35;
+      } else {
+        State.systemStatus = 'NORMAL';
+        State.result.probableZone = 'NONE';
+        State.result.confidence = 0;
+        State.result.detectionTimeStr = '--';
+      }
+    }
+
+    /* =========================================================================
+       6. USER INTERACTION & AUTOMATIC DEMO CONTROLLER
+       ========================================================================= */
+    function setPipelineMode(mode) {
+      State.mode = mode;
+      document.querySelectorAll('.btn-group .btn').forEach(b => b.classList.remove('active'));
+      
+      if (mode === 'NORMAL') {
+        document.getElementById('btn-normal').classList.add('active');
+        logEvent('Pipeline state changed to NORMAL.', 'info');
+        State.physicalLeakRevealed = false;
+        leakMeshGroup.visible = false;
+      } else if (mode === 'MINOR_LEAK') {
+        document.getElementById('btn-minor').classList.add('active');
+        logEvent('MINOR LEAK induced in pipeline model.', 'warn');
+      } else if (mode === 'MAJOR_LEAK') {
+        document.getElementById('btn-major').classList.add('active');
+        logEvent('MAJOR LEAK induced in pipeline model.', 'danger');
+      }
+      updateLeak3DPosition();
+    }
+
+    function changeLeakZoneTarget(zoneKey) {
+      State.leakTargetZone = zoneKey;
+      logEvent(`Physical leak coordinate updated to Pipe ${zoneKey.replace('_', ' → ')}`, 'info');
+      updateLeak3DPosition();
+    }
+
+    function updateLeak3DPosition() {
+      // Map leak target key to 3D Scene X-Coordinates
+      const posXMap = { 'A_B': -3.35, 'B_C': 9.95, 'C_D': 23.3 };
+      const targetX = posXMap[State.leakTargetZone] || 0;
+      
+      // FIXED: Placed spray right on top surface of the main horizontal pipe (y=1.5)
+      leakMeshGroup.position.set(targetX, 1.5, 0);
+
+      // Visibility toggles when user clicks Reveal Leak AND leak state is active
+      leakMeshGroup.visible = State.physicalLeakRevealed && (State.mode !== 'NORMAL');
+    }
+
+    function revealPhysicalLeak() {
+      if (State.mode === 'NORMAL') {
+        logEvent('Cannot reveal leak: Pipeline operating normally. Trigger Minor or Major leak first.', 'warn');
+        return;
+      }
+      State.physicalLeakRevealed = true;
+      updateLeak3DPosition();
+      logEvent('Physical leak location visually highlighted in 3D scene.', 'info');
+    }
+
+    function triggerSensorSpike() {
+      State.spikeActiveTicks = 8; // Transient disturbance lasting ~1.6 sec
+      logEvent('Transient pressure spike / pump vibration injected.', 'warn');
+    }
+
+    function toggleAutoDemo() {
+      State.autoDemoActive = !State.autoDemoActive;
+      const btn = document.getElementById('btn-demo');
+      if (State.autoDemoActive) {
+        btn.classList.add('active');
+        State.demoTimer = 0;
+        logEvent('AUTOMATIC DEMONSTRATION MODE STARTED.', 'info');
+        resetSystem();
+        State.autoDemoActive = true;
+      } else {
+        btn.classList.remove('active');
+        logEvent('Auto Demo Stopped.', 'info');
+      }
+    }
+
+    function runAutoDemoLogic() {
+      if (!State.autoDemoActive) return;
+
+      State.demoTimer += CONFIG.sensorUpdateIntervalMs / 1000;
+      const t = State.demoTimer;
+
+      if (t > 10 && t < 10.3 && State.mode === 'NORMAL' && State.isCalibrated) {
+        setPipelineMode('MINOR_LEAK');
+      } else if (t > 28 && t < 28.3) {
+        revealPhysicalLeak();
+      } else if (t > 42) {
+        State.demoTimer = 0;
+        resetSystem();
+        State.autoDemoActive = true;
+      }
+    }
+
+    function resetSystem() {
+      State.mode = 'NORMAL';
+      State.calibProgress = 0;
+      State.isCalibrated = false;
+      State.systemStatus = 'CALIBRATING';
+      State.physicalLeakRevealed = false;
+      State.detectionStartTime = null;
+      State.result = { probableZone: 'NONE', confidence: 0, detectionTimeStr: '--' };
+
+      CONFIG.nodes.forEach(name => {
+        const n = State.nodes[name];
+        n.rollingFlow = [];
+        n.rollingPress = [];
+        n.anomalyScore = 0;
+        n.anomalyFlag = false;
+      });
+
+      leakMeshGroup.visible = false;
+      document.querySelectorAll('.btn-group .btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('btn-normal').classList.add('active');
+
+      logEvent('System Reset Triggered. Restarting Calibration...', 'info');
+      clearCharts();
+    }
+
+    /* =========================================================================
+       7. UI DASHBOARD, EVENT LOGS & REAL-TIME CHARTS
+       ========================================================================= */
+    let flowChart, pressureChart;
+
+    function initCharts() {
+      const flowCtx = document.getElementById('flowChart').getContext('2d');
+      const pressCtx = document.getElementById('pressureChart').getContext('2d');
+
+      const chartOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        scales: {
+          x: { display: false },
+          y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8', font: { size: 9 } } }
+        },
+        plugins: {
+          legend: { labels: { color: '#f8fafc', font: { size: 10 }, boxWidth: 10 } }
+        }
+      };
+
+      flowChart = new Chart(flowCtx, {
+        type: 'line',
+        data: {
+          labels: Array(25).fill(''),
+          datasets: [
+            { label: 'Node A Flow', borderColor: '#38bdf8', data: Array(25).fill(null), borderWidth: 1.5, pointRadius: 0 },
+            { label: 'Node B Flow', borderColor: '#22c55e', data: Array(25).fill(null), borderWidth: 1.5, pointRadius: 0 },
+            { label: 'Node C Flow', borderColor: '#eab308', data: Array(25).fill(null), borderWidth: 1.5, pointRadius: 0 },
+            { label: 'Node D Flow', borderColor: '#ef4444', data: Array(25).fill(null), borderWidth: 1.5, pointRadius: 0 }
+          ]
+        },
+        options: { ...chartOptions, plugins: { ...chartOptions.plugins, title: { display: true, color: '#94a3b8', text: 'FLOW RATE TELEMETRY (L/min)', font: { size: 11 } } } }
+      });
+
+      pressureChart = new Chart(pressCtx, {
+        type: 'line',
+        data: {
+          labels: Array(25).fill(''),
+          datasets: [
+            { label: 'Node A Press', borderColor: '#38bdf8', data: Array(25).fill(null), borderWidth: 1.5, pointRadius: 0 },
+            { label: 'Node B Press', borderColor: '#22c55e', data: Array(25).fill(null), borderWidth: 1.5, pointRadius: 0 },
+            { label: 'Node C Press', borderColor: '#eab308', data: Array(25).fill(null), borderWidth: 1.5, pointRadius: 0 },
+            { label: 'Node D Press', borderColor: '#ef4444', data: Array(25).fill(null), borderWidth: 1.5, pointRadius: 0 }
+          ]
+        },
+        options: { ...chartOptions, plugins: { ...chartOptions.plugins, title: { display: true, color: '#94a3b8', text: 'HYDRAULIC PRESSURE (bar)', font: { size: 11 } } } }
+      });
+    }
+
+    function updateChartsData() {
+      const addData = (chart, nodeIndex, val) => {
+        const ds = chart.data.datasets[nodeIndex].data;
+        ds.push(val);
+        if (ds.length > 25) ds.shift();
+      };
+
+      CONFIG.nodes.forEach((name, idx) => {
+        addData(flowChart, idx, State.nodes[name].flow.toFixed(2));
+        addData(pressureChart, idx, State.nodes[name].pressure.toFixed(2));
+      });
+
+      flowChart.update();
+      pressureChart.update();
+    }
+
+    function clearCharts() {
+      [flowChart, pressureChart].forEach(chart => {
+        chart.data.datasets.forEach(ds => { ds.data = Array(25).fill(null); });
+        chart.update();
+      });
+    }
+
+    function renderNodeCardsUI() {
+      const container = document.getElementById('nodes-grid-container');
+      container.innerHTML = '';
+
+      CONFIG.nodes.forEach(name => {
+        const n = State.nodes[name];
+        const card = document.createElement('div');
+        card.className = `node-card ${n.anomalyFlag ? 'anomaly' : ''}`;
+        
+        card.innerHTML = `
+          <div class="node-header">
+            <span>${name}</span>
+            <span style="color: ${n.anomalyFlag ? 'var(--accent-red)' : 'var(--accent-green)'}">
+              ${n.anomalyFlag ? 'ANOMALY' : 'NORMAL'}
+            </span>
+          </div>
+          <div class="node-metrics">
+            <div>Flow: <b>${n.flow.toFixed(1)} L/min</b></div>
+            <div>Press: <b>${n.pressure.toFixed(2)} bar</b></div>
+            <div>Score: <b>${n.anomalyScore}%</b></div>
+            <div>Std: <b>${n.stdP.toFixed(3)}</b></div>
+          </div>
+        `;
+        container.appendChild(card);
+
+        // Update 3D Scene Node LED visual state
+        if (node3DObjects[name]) {
+          node3DObjects[name].led.color.setHex(n.anomalyFlag ? 0xef4444 : 0x22c55e);
+        }
+      });
+    }
+
+    function updateDashboardUI() {
+      // System Badge
+      const badge = document.getElementById('system-status-badge');
+      badge.className = `status-badge status-${State.systemStatus === 'LEAK DETECTED' ? 'LEAK' : State.systemStatus}`;
+      badge.innerText = State.systemStatus;
+
+      // Calibration progress UI
+      const calibPct = Math.min(100, Math.round((State.calibProgress / CONFIG.calibSamplesRequired) * 100));
+      document.getElementById('calib-text-val').innerText = `${calibPct}%`;
+      document.getElementById('calib-bar-fill').style.width = `${calibPct}%`;
+
+      // Results Panel UI
+      document.getElementById('res-zone').innerText = State.result.probableZone;
+      document.getElementById('res-conf').innerText = `${State.result.confidence}%`;
+      document.getElementById('res-time').innerText = State.result.detectionTimeStr;
+
+      // Dynamic Adaptive Threshold Limits Display
+      const nB = State.nodes['Node B'];
+      const threshPanel = document.getElementById('thresholds-info-panel');
+      threshPanel.innerHTML = `
+        <div class="result-row"><span>Baseline Press (Node B):</span><span class="result-val">${nB.baselineP.toFixed(2)} bar</span></div>
+        <div class="result-row"><span>Adaptive Min Threshold:</span><span class="result-val">${(nB.baselineP - 0.25).toFixed(2)} bar</span></div>
+        <div class="result-row"><span>Flow Delta Threshold:</span><span class="result-val">±1.8 L/min</span></div>
+      `;
+    }
+
+    function logEvent(msg, type = 'info') {
+      const container = document.getElementById('event-log-container');
+      const entry = document.createElement('div');
+      entry.className = 'log-entry';
+      
+      const timeStr = new Date().toLocaleTimeString('en-US', { hour12: false });
+      entry.innerHTML = `<span class="log-time">[${timeStr}]</span> <span class="log-${type}">${msg}</span>`;
+      
+      container.appendChild(entry);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function toggleAccordion() {
+      const content = document.getElementById('accordion-content');
+      content.classList.toggle('show');
+    }
+
+    /* =========================================================================
+       8. ANIMATION LOOP & MAIN EXECUTION RENDER TIMERS
+       ========================================================================= */
+    function animate() {
+      requestAnimationFrame(animate);
+
+      // Animate Water Stream Particles
+      if (waterParticles) {
+        const positions = waterParticles.geometry.attributes.position.array;
+        for (let i = 0; i < positions.length / 3; i++) {
+          positions[i * 3] += 0.25; // Move X rightwards
+          if (positions[i * 3] > 37) positions[i * 3] = -17; // Reset to Tank
+        }
+        waterParticles.geometry.attributes.position.needsUpdate = true;
+      }
+
+      // Animate Leak Spray Particles
+      if (leakParticles && leakMeshGroup.visible) {
+        const pos = leakParticles.geometry.attributes.position.array;
+        const vels = leakParticles.userData.velocities;
+
+        for (let i = 0; i < pos.length / 3; i++) {
+          pos[i * 3] += vels[i][0];
+          pos[i * 3 + 1] += vels[i][1];
+          pos[i * 3 + 2] += vels[i][2];
+
+          // Gravity effect
+          vels[i][1] -= 0.025;
+
+          // Reset sprayed particle loop
+          if (pos[i * 3 + 1] < 0) {
+            pos[i * 3] = (Math.random() - 0.5) * 0.4;
+            pos[i * 3 + 1] = Math.random() * 0.5;
+            pos[i * 3 + 2] = (Math.random() - 0.5) * 0.4;
+            vels[i][1] = Math.random() * 0.8 + 0.4;
+          }
+        }
+        leakParticles.geometry.attributes.position.needsUpdate = true;
+      }
+
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    function onWindowResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    /* =========================================================================
+       9. SYSTEM INITIALIZATION ENTRY POINT
+       ========================================================================= */
+    window.addEventListener('DOMContentLoaded', () => {
+      init3DScene();
+      initCharts();
+
+      // Main Fixed Sensor Simulation Loop (Runs at set Hz interval independent of FPS)
+      setInterval(() => {
+        updatePipelinePhysicsModel();
+        runAnomalyDetectionAlgorithm();
+        runAutoDemoLogic();
+        
+        renderNodeCardsUI();
+        updateDashboardUI();
+        updateChartsData();
+      }, CONFIG.sensorUpdateIntervalMs);
+
+      logEvent('System initialized. Starting baseline calibration...', 'info');
+      animate();
+    });
+  </script>
+</body>
+</html>
